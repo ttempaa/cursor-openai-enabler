@@ -20,15 +20,14 @@ Works on **Windows, macOS, and Linux**.
 
 ## Install
 
-### From .vsix
+### From release
 
-Download or build the `.vsix` file, then:
-
-```
-cursor --install-extension cursor-openai-enabler-x.x.x.vsix
-```
-
-Or in Cursor: `Ctrl+Shift+P` → "Extensions: Install from VSIX..."
+1. Download the latest `.vsix` from [Releases](https://github.com/ttempaa/cursor-openai-enabler/releases)
+2. Install via CLI:
+   ```
+   cursor --install-extension cursor-openai-enabler-x.x.x.vsix
+   ```
+   Or in Cursor: `Ctrl+Shift+P` → "Extensions: Install from VSIX..."
 
 ### Build from source
 
