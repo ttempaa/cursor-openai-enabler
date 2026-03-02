@@ -1,0 +1,8 @@
+.vscode/**
+node_modules/**
+src/**
+build.ts
+tsconfig.json
+bun.lock
+.gitignore
+!dist/**

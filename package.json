@@ -1,0 +1,26 @@
+{
+  "name": "cursor-openai-enabler",
+  "displayName": "Cursor OpenAI Enabler",
+  "description": "Automatically re-enables the OpenAI API Key toggle in Cursor when it randomly resets",
+  "version": "0.0.1",
+  "publisher": "ttempaa",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "extensionKind": ["ui"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "scripts": {
+    "build": "bun run build.ts",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "dependencies": {
+    "sql.js": "^1.12.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.0",
+    "@vscode/vsce": "^3.2.0"
+  }
+}
