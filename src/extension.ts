@@ -21,7 +21,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const stateDbPath = path.join(globalStorageDir, "state.vscdb");
 
   if (!fs.existsSync(stateDbPath)) {
-    console.log("cursor-openai-fix: state.vscdb not found, skipping.");
+    console.log("cursor-openai-enabler: state.vscdb not found, skipping.");
     return;
   }
 
@@ -110,12 +110,12 @@ function createChecker(stateDbPath: string) {
         await vscode.commands.executeCommand(TOGGLE_COMMAND);
 
         vscode.window.showInformationMessage(
-          "Cursor OpenAI Fix: re-enabled OpenAI API Key toggle."
+          "Cursor OpenAI Enabler: re-enabled OpenAI API Key toggle."
         );
-        console.log("cursor-openai-fix: toggled useOpenAIKey back to true");
+        console.log("cursor-openai-enabler: toggled useOpenAIKey back to true");
       }
     } catch (err) {
-      console.error("cursor-openai-fix:", err);
+      console.error("cursor-openai-enabler:", err);
     } finally {
       running = false;
     }
