@@ -13,8 +13,13 @@ const TOGGLE_COMMAND = "aiSettings.usingOpenAIKey.toggle";
 
 let pollInterval: ReturnType<typeof setInterval> | undefined;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+let initialTimeout: ReturnType<typeof setTimeout> | undefined;
 let sqlPromise: ReturnType<typeof initSqlJs>;
 let sqlite3Path: string | undefined;
+let statusBarItem: vscode.StatusBarItem;
+let isEnabled = true;
+let watcher: vscode.FileSystemWatcher | undefined;
+let checkAndFix: (() => Promise<void>) | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   const globalStorageDir = path.dirname(context.globalStorageUri.fsPath);
@@ -30,29 +35,109 @@ export async function activate(context: vscode.ExtensionContext) {
   const wasmPath = path.join(context.extensionPath, "dist", "sql-wasm.wasm");
   sqlPromise = initSqlJs({ locateFile: () => wasmPath });
 
-  const checkAndFix = createChecker(stateDbPath);
+  checkAndFix = createChecker(stateDbPath);
+
+  // Restore saved state
+  isEnabled = context.globalState.get<boolean>("enabled", true);
+
+  // Status bar toggle button
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
+  statusBarItem.command = "cursor-openai-enabler.toggle";
+  context.subscriptions.push(statusBarItem);
+  updateStatusBar();
+
+  // Toggle command
+  const toggleCmd = vscode.commands.registerCommand(
+    "cursor-openai-enabler.toggle",
+    () => {
+      isEnabled = !isEnabled;
+      context.globalState.update("enabled", isEnabled);
+      updateStatusBar();
+      if (isEnabled) {
+        startMonitoring(globalStorageDir, stateDbPath, context);
+      } else {
+        stopMonitoring();
+      }
+      vscode.window.showInformationMessage(
+        `Cursor OpenAI Enabler: ${isEnabled ? "activated" : "paused"}`
+      );
+    }
+  );
+  context.subscriptions.push(toggleCmd);
+
+  if (isEnabled) {
+    startMonitoring(globalStorageDir, stateDbPath, context);
+  }
+}
+
+function updateStatusBar() {
+  if (isEnabled) {
+    statusBarItem.text = "$(check) OpenAI Key";
+    statusBarItem.tooltip = "Cursor OpenAI Enabler: Active (click to pause)";
+    statusBarItem.backgroundColor = undefined;
+  } else {
+    statusBarItem.text = "$(circle-slash) OpenAI Key";
+    statusBarItem.tooltip = "Cursor OpenAI Enabler: Paused (click to activate)";
+    statusBarItem.backgroundColor = new vscode.ThemeColor(
+      "statusBarItem.warningBackground"
+    );
+  }
+  statusBarItem.show();
+}
+
+function startMonitoring(
+  globalStorageDir: string,
+  stateDbPath: string,
+  context: vscode.ExtensionContext
+) {
+  if (!checkAndFix) return;
 
   // Initial check (with delay to let Cursor fully initialize)
-  setTimeout(checkAndFix, 3000);
+  initialTimeout = setTimeout(checkAndFix, 3000);
 
   // File watcher (debounced)
-  const watcher = vscode.workspace.createFileSystemWatcher(
+  watcher = vscode.workspace.createFileSystemWatcher(
     new vscode.RelativePattern(vscode.Uri.file(globalStorageDir), "state.vscdb")
   );
+  const fn = checkAndFix;
   watcher.onDidChange(() => {
+    if (!isEnabled) return;
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(checkAndFix, 1000);
+    debounceTimer = setTimeout(fn, 1000);
   });
   context.subscriptions.push(watcher);
 
   // Polling fallback every 30s
-  pollInterval = setInterval(checkAndFix, 30_000);
-  context.subscriptions.push({ dispose: () => clearInterval(pollInterval!) });
+  pollInterval = setInterval(() => {
+    if (isEnabled) fn();
+  }, 30_000);
+}
+
+function stopMonitoring() {
+  if (initialTimeout) {
+    clearTimeout(initialTimeout);
+    initialTimeout = undefined;
+  }
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = undefined;
+  }
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = undefined;
+  }
+  if (watcher) {
+    watcher.dispose();
+    watcher = undefined;
+  }
 }
 
 export function deactivate() {
-  if (pollInterval) clearInterval(pollInterval);
-  if (debounceTimer) clearTimeout(debounceTimer);
+  stopMonitoring();
+  if (statusBarItem) statusBarItem.dispose();
 }
 
 async function findSqlite3(): Promise<string | undefined> {

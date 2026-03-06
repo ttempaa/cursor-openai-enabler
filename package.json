@@ -2,7 +2,7 @@
   "name": "cursor-openai-enabler",
   "displayName": "Cursor OpenAI Enabler",
   "description": "Automatically re-enables the OpenAI API Key toggle in Cursor when it randomly resets",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "publisher": "ttempaa",
   "engines": {
     "vscode": "^1.85.0"
@@ -11,6 +11,14 @@
   "extensionKind": ["ui"],
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "cursor-openai-enabler.toggle",
+        "title": "Cursor OpenAI Enabler: Toggle On/Off"
+      }
+    ]
+  },
   "scripts": {
     "build": "bun run build.ts",
     "package": "vsce package --allow-missing-repository"
