@@ -2,7 +2,7 @@
   "name": "cursor-openai-enabler",
   "displayName": "Cursor OpenAI Enabler",
   "description": "Automatically re-enables the OpenAI API Key toggle in Cursor when it randomly resets",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "ttempaa",
   "engines": {
     "vscode": "^1.85.0"
