@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const STORAGE_KEY =
   "src.vs.platform.reactivestorage.browser.reactiveStorageServiceImpl.persistentStorage.applicationUser";
 const TOGGLE_COMMAND = "aiSettings.usingOpenAIKey.toggle";
+const EXTENSION_ID = "ttempaa.cursor-openai-enabler";
 
 let pollInterval: ReturnType<typeof setInterval> | undefined;
 let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -21,13 +22,84 @@ let isEnabled = true;
 let watcher: vscode.FileSystemWatcher | undefined;
 let watcherSubscription: vscode.Disposable | undefined;
 let checkAndFix: (() => Promise<void>) | undefined;
+let log: vscode.OutputChannel;
+let runtimeStatePath: string | undefined;
+let sessionId: string | undefined;
+let currentExtensionPath: string | undefined;
+
+type RuntimeState = {
+  sessionId: string;
+  enabled: boolean;
+  extensionPath: string;
+};
+
+function logLine(msg: string) {
+  const d = new Date();
+  const ts = `${d.toTimeString().slice(0, 8)}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+  log.appendLine(`${ts} ${msg}`);
+}
+
+function createSessionId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function readRuntimeState(): RuntimeState | undefined {
+  if (!runtimeStatePath || !fs.existsSync(runtimeStatePath)) return undefined;
+  try {
+    return JSON.parse(fs.readFileSync(runtimeStatePath, "utf8")) as RuntimeState;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeRuntimeState(enabled: boolean) {
+  if (!runtimeStatePath || !sessionId || !currentExtensionPath) return;
+  const state: RuntimeState = {
+    sessionId,
+    enabled,
+    extensionPath: currentExtensionPath,
+  };
+  fs.writeFileSync(runtimeStatePath, JSON.stringify(state), "utf8");
+}
+
+function shouldMonitor() {
+  const state = readRuntimeState();
+  if (!state) {
+    logLine("[guard] runtime state missing");
+    stopMonitoring();
+    return false;
+  }
+  if (state.sessionId !== sessionId) {
+    logLine("[guard] stale session detected");
+    stopMonitoring();
+    return false;
+  }
+  if (!fs.existsSync(state.extensionPath)) {
+    logLine("[guard] extension path missing, stopping");
+    stopMonitoring();
+    return false;
+  }
+  if (!vscode.extensions.getExtension(EXTENSION_ID)) {
+    logLine("[guard] extension no longer registered, stopping");
+    stopMonitoring();
+    return false;
+  }
+  if (!state.enabled) return false;
+  return true;
+}
 
 export async function activate(context: vscode.ExtensionContext) {
+  log = vscode.window.createOutputChannel("Cursor OpenAI Enabler");
+  context.subscriptions.push(log);
+
   const globalStorageDir = path.dirname(context.globalStorageUri.fsPath);
   const stateDbPath = path.join(globalStorageDir, "state.vscdb");
+  runtimeStatePath = path.join(globalStorageDir, "cursor-openai-enabler-runtime.json");
+  currentExtensionPath = context.extensionPath;
+  sessionId = createSessionId();
 
   if (!fs.existsSync(stateDbPath)) {
-    console.log("cursor-openai-enabler: state.vscdb not found, skipping.");
+    logLine("state.vscdb not found, skipping.");
     return;
   }
 
@@ -40,6 +112,8 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Restore saved state
   isEnabled = context.globalState.get<boolean>("enabled", true);
+  writeRuntimeState(isEnabled);
+  logLine(`[activate] session=${sessionId} enabled=${isEnabled}`);
 
   // Status bar toggle button
   statusBarItem = vscode.window.createStatusBarItem(
@@ -53,14 +127,27 @@ export async function activate(context: vscode.ExtensionContext) {
   // Toggle command
   const toggleCmd = vscode.commands.registerCommand(
     "cursor-openai-enabler.toggle",
-    () => {
+    async () => {
       isEnabled = !isEnabled;
+      writeRuntimeState(isEnabled);
+      logLine(`[toggle] ${isEnabled ? "activated" : "paused"}`);
       context.globalState.update("enabled", isEnabled);
       updateStatusBar();
       if (isEnabled) {
         startMonitoring(globalStorageDir, stateDbPath, context);
+        if (checkAndFix) await checkAndFix();
       } else {
         stopMonitoring();
+        // Disable the key in Cursor when pausing
+        try {
+          const currentValue = await readUseOpenAIKey(stateDbPath);
+          if (currentValue === true) {
+            logLine("[toggle] disabling key");
+            await vscode.commands.executeCommand(TOGGLE_COMMAND);
+          }
+        } catch (err) {
+          logLine(`[toggle] error disabling key: ${err}`);
+        }
       }
       vscode.window.showInformationMessage(
         `Cursor OpenAI Enabler: ${isEnabled ? "activated" : "paused"}`
@@ -95,6 +182,7 @@ function startMonitoring(
   context: vscode.ExtensionContext
 ) {
   if (!checkAndFix) return;
+  stopMonitoring(); // prevent double-start leaking intervals
 
   // Initial check (with delay to let Cursor fully initialize)
   initialTimeout = setTimeout(checkAndFix, 3000);
@@ -105,16 +193,14 @@ function startMonitoring(
   );
   const fn = checkAndFix;
   watcherSubscription = watcher.onDidChange(() => {
-    if (!isEnabled) return;
+    if (!shouldMonitor()) return;
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(fn, 1000);
   });
-  context.subscriptions.push(watcher);
-  context.subscriptions.push(watcherSubscription);
 
   // Polling fallback every 30s
   pollInterval = setInterval(() => {
-    if (isEnabled) fn();
+    if (shouldMonitor()) fn();
   }, 30_000);
 }
 
@@ -143,6 +229,7 @@ function stopMonitoring() {
 
 export function deactivate() {
   isEnabled = false;
+  writeRuntimeState(false);
   stopMonitoring();
   if (statusBarItem) statusBarItem.dispose();
 }
@@ -191,23 +278,22 @@ function createChecker(stateDbPath: string) {
   let running = false;
 
   return async function checkAndFix() {
+    if (!shouldMonitor()) return;
     if (running) return;
     running = true;
 
     try {
       const enabled = await readUseOpenAIKey(stateDbPath);
-
-      if (enabled === false) {
-        // Toggle it ON via Cursor's own command
+      if (enabled === false && shouldMonitor()) {
+        logLine("[check] re-enabling key");
         await vscode.commands.executeCommand(TOGGLE_COMMAND);
 
         vscode.window.showInformationMessage(
           "Cursor OpenAI Enabler: re-enabled OpenAI API Key toggle."
         );
-        console.log("cursor-openai-enabler: toggled useOpenAIKey back to true");
       }
     } catch (err) {
-      console.error("cursor-openai-enabler:", err);
+      logLine(`[check] error: ${err}`);
     } finally {
       running = false;
     }

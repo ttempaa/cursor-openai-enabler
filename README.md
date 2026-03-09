@@ -22,9 +22,19 @@ A status bar button (`OpenAI Key`) lets you pause and resume the extension witho
 
 - Click the button or use `Ctrl+Shift+P` → "Cursor OpenAI Enabler: Toggle On/Off"
 - When paused, all monitoring stops completely (no polling, no file watching)
+- When paused, the extension also turns off the OpenAI key toggle in Cursor
+- When resumed, the extension immediately checks the setting and re-enables it if needed
 - The state persists across Cursor restarts
 
 Works on **Windows, macOS, and Linux**.
+
+### Logs
+
+The extension writes diagnostic messages to the Output panel:
+
+- Open `View` → `Output`
+- Select `Cursor OpenAI Enabler`
+- Log lines include timestamps with milliseconds
 
 ## Install
 
