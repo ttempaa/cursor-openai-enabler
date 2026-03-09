@@ -1,6 +1,7 @@
 .vscode/**
 node_modules/**
 src/**
+biome.json
 build.ts
 tsconfig.json
 bun.lock
