@@ -27,6 +27,7 @@
 	},
 	"scripts": {
 		"build": "bun run build.ts",
+		"typecheck": "tsc --noEmit",
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"package": "vsce package --allow-missing-repository"
@@ -40,6 +41,8 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
+		"@types/node": "^25.4.0",
+		"@types/sql.js": "^1.4.9",
 		"@types/vscode": "^1.85.0",
 		"@vscode/vsce": "^3.2.0",
 		"typescript": "^5.7.0"

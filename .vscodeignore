@@ -6,4 +6,7 @@ build.ts
 tsconfig.json
 bun.lock
 .gitignore
+.git/**
+.github/**
+*.vsix
 !dist/**
