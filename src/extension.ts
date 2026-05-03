@@ -18,6 +18,8 @@ const RUNTIME_STATE_FILE = "cursor-openai-enabler-runtime.json";
 const INITIAL_CHECK_DELAY_MS = 3000;
 const DEBOUNCE_DELAY_MS = 1000;
 const POLL_INTERVAL_MS = 30_000;
+const POST_TOGGLE_READ_DELAY_MS = 500;
+const POST_TOGGLE_READ_RETRIES = 3;
 
 let pollInterval: NodeJS.Timeout | undefined;
 let debounceTimer: NodeJS.Timeout | undefined;
@@ -169,6 +171,89 @@ export async function activate(context: vscode.ExtensionContext) {
 		},
 	);
 	context.subscriptions.push(toggleCmd);
+
+	// Toggle Key command — toggles the OpenAI key in Cursor and syncs extension state
+	const toggleOpenAIKeyCmd = vscode.commands.registerCommand(
+		"cursor-openai-enabler.toggleOpenAIKey",
+		async () => {
+			logLine("[toggleOpenAIKey] executing toggle command");
+
+			// Remember current state so we can restore monitoring on error
+			const wasEnabled = isEnabled;
+			// Stop monitoring before toggling so the watcher cannot race us
+			stopMonitoring();
+
+			// Read the current value before the toggle for comparison
+			const prevValue = await readUseOpenAIKey(stateDbPath);
+			logLine(`[toggleOpenAIKey] pre-toggle value=${prevValue}`);
+
+			try {
+				await vscode.commands.executeCommand(TOGGLE_COMMAND);
+			} catch (err) {
+				logLine(`[toggleOpenAIKey] toggle command failed: ${err}`);
+				vscode.window.showErrorMessage(
+					`${EXTENSION_NAME}: failed to toggle OpenAI API Key.`,
+				);
+				if (wasEnabled) startMonitoring(globalStorageDir);
+				return;
+			}
+
+			let newValue: boolean | undefined;
+			for (let i = 0; i < POST_TOGGLE_READ_RETRIES; i++) {
+				await new Promise((r) => setTimeout(r, POST_TOGGLE_READ_DELAY_MS));
+				newValue = await readUseOpenAIKey(stateDbPath);
+				logLine(
+					`[toggleOpenAIKey] post-toggle read ${i + 1}: value=${newValue}`,
+				);
+
+				// If the value appeared (was undefined) or changed, the toggle has been applied
+				if (
+					newValue !== undefined &&
+					(prevValue === undefined || newValue !== prevValue)
+				) {
+					break;
+				}
+
+				if (i < POST_TOGGLE_READ_RETRIES - 1) {
+					logLine(
+						`[toggleOpenAIKey] retry ${i + 1}/${POST_TOGGLE_READ_RETRIES}`,
+					);
+				}
+			}
+
+			if (
+				newValue === undefined ||
+				(prevValue !== undefined && newValue === prevValue)
+			) {
+				logLine(
+					"[toggleOpenAIKey] failed to confirm key state change after toggle",
+				);
+				vscode.window.showWarningMessage(
+					`${EXTENSION_NAME}: could not confirm key state after toggle.`,
+				);
+				if (wasEnabled) startMonitoring(globalStorageDir);
+				return;
+			}
+
+			isEnabled = newValue;
+			await writeRuntimeState(isEnabled);
+			await context.globalState.update("enabled", isEnabled);
+			updateStatusBar();
+			logLine(
+				`[toggleOpenAIKey] key=${isEnabled}, monitoring ${isEnabled ? "active" : "paused"}`,
+			);
+
+			if (isEnabled) {
+				startMonitoring(globalStorageDir);
+				if (checkAndFix) await checkAndFix();
+			}
+
+			vscode.window.showInformationMessage(
+				`${EXTENSION_NAME}: OpenAI API Key is ${isEnabled ? "ON" : "OFF"}, monitoring ${isEnabled ? "active" : "paused"}.`,
+			);
+		},
+	);
+	context.subscriptions.push(toggleOpenAIKeyCmd);
 
 	if (isEnabled) {
 		startMonitoring(globalStorageDir);
