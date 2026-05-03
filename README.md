@@ -16,26 +16,6 @@ Detection runs via:
 - **File watcher** on `state.vscdb` (reacts in ~1 second)
 - **Polling fallback** every 30 seconds
 
-### Toggle button
-
-A status bar button (`OpenAI Key`) lets you pause and resume the extension without disabling it. This is useful when you want to switch to a different model temporarily.
-
-- Click the button or use `Ctrl+Shift+P` → "Cursor OpenAI Enabler: Toggle On/Off"
-- When paused, all monitoring stops completely (no polling, no file watching)
-- When paused, the extension also turns off the OpenAI key toggle in Cursor
-- When resumed, the extension immediately checks the setting and re-enables it if needed
-- The state persists across Cursor restarts
-
-Works on **Windows, macOS, and Linux**.
-
-### Logs
-
-The extension writes diagnostic messages to the Output panel:
-
-- Open `View` → `Output`
-- Select `Cursor OpenAI Enabler`
-- Log lines include timestamps with milliseconds
-
 ## Install
 
 ### From release
@@ -56,6 +36,27 @@ bun install
 bun run build
 bun run package
 ```
+
+## Commands
+
+The extension provides two commands. Open the Command Palette (`Ctrl+Shift+P`) to run them.
+
+Both commands are useful when you want to temporarily switch to a different model. They turn off the OpenAI key and prevent the extension from automatically re-enabling it.
+
+The difference is which side is "primary":
+
+- **Cursor OpenAI Enabler: Toggle Extension** (`cursor-openai-enabler.toggle`): controls the **extension itself**. When paused, all monitoring stops completely and the OpenAI key is turned off as a side effect. When resumed, monitoring starts and the key is re-enabled if needed. The state persists across Cursor restarts.
+- **Cursor OpenAI Enabler: Toggle OpenAI Key** (`cursor-openai-enabler.toggleOpenAIKey`): controls the **key directly**. It toggles the OpenAI API Key setting in Cursor and the extension syncs its state to match. When the key is turned on, monitoring becomes active; when turned off, monitoring pauses.
+
+The extension also shows a status bar button (`OpenAI Key`) that reflects the current state. Click it to run **Toggle Extension**.
+
+## Logs
+
+The extension writes diagnostic messages to the Output panel:
+
+- Open `View` → `Output`
+- Select `Cursor OpenAI Enabler`
+- Log lines include timestamps with milliseconds
 
 ## How it finds the database
 
